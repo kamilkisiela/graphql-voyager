@@ -9,11 +9,13 @@ import OtherSearchResults from './OtherSearchResults';
 import SearchBox from '../utils/SearchBox';
 
 import './DocExplorer.css';
+import { VoyagerDisplayOptions } from '../Voyager';
 
 interface DocExplorerProps {
   typeGraph: any;
   selectedTypeID: string;
   selectedEdgeID: string;
+  displayOptions: VoyagerDisplayOptions;
 
   onFocusNode: (id: string) => void;
   onSelectNode: (id: string) => void;
@@ -95,11 +97,12 @@ export default class DocExplorer extends React.Component<DocExplorerProps> {
   }
 
   renderCurrentNav(currentNav) {
-    const { typeGraph, selectedEdgeID, onSelectEdge, onFocusNode } = this.props;
+    const { typeGraph, selectedEdgeID, onSelectEdge, onFocusNode, displayOptions } = this.props;
 
     if (currentNav.type) {
       return (
         <TypeDoc
+          displayOptions={displayOptions}
           selectedType={currentNav.type}
           selectedEdgeID={selectedEdgeID}
           typeGraph={typeGraph}

@@ -1,5 +1,3 @@
-import { getIntrospectionQuery } from 'graphql/utilities';
-
 import { getSchema, extractTypeId } from '../introspection';
 import { SVGRender, getTypeGraph } from '../graph/';
 import { WorkerCallback } from '../utils/types';
@@ -13,11 +11,17 @@ import GraphViewport from './GraphViewport';
 import DocExplorer from './doc-explorer/DocExplorer';
 import PoweredBy from './utils/PoweredBy';
 import Settings from './settings/Settings';
+import {SourceLinkCreator} from './utils/SourceLink';
 
 import './Voyager.css';
 import './viewport.css';
 
-type IntrospectionProvider = (query: string) => Promise<any>;
+type SourcesProvider = () => Promise<Sources>;
+
+export type Sources = Array<{
+  filepath: string;
+  content: string;
+}>;
 
 export interface VoyagerDisplayOptions {
   rootType?: string;
@@ -26,6 +30,7 @@ export interface VoyagerDisplayOptions {
   showLeafFields?: boolean;
   sortByAlphabet?: boolean;
   hideRoot?: boolean;
+  sourceLink?: SourceLinkCreator;
 }
 
 const defaultDisplayOptions = {
@@ -44,7 +49,7 @@ function normalizeDisplayOptions(options) {
 }
 
 export interface VoyagerProps {
-  introspection: IntrospectionProvider | Object;
+  sources: SourcesProvider | Sources;
   displayOptions?: VoyagerDisplayOptions;
   hideDocs?: boolean;
   hideSettings?: boolean;
@@ -56,7 +61,7 @@ export interface VoyagerProps {
 
 export default class Voyager extends React.Component<VoyagerProps> {
   static propTypes = {
-    introspection: PropTypes.oneOfType([
+    sources: PropTypes.oneOfType([
       PropTypes.func.isRequired,
       PropTypes.object.isRequired,
     ]).isRequired,
@@ -67,6 +72,7 @@ export default class Voyager extends React.Component<VoyagerProps> {
       sortByAlphabet: PropTypes.bool,
       hideRoot: PropTypes.bool,
       showLeafFields: PropTypes.bool,
+      program: PropTypes.string,
     }),
     hideDocs: PropTypes.bool,
     hideSettings: PropTypes.bool,
@@ -75,7 +81,7 @@ export default class Voyager extends React.Component<VoyagerProps> {
   };
 
   state = {
-    introspectionData: null,
+    sources: null,
     schema: null,
     typeGraph: null,
     displayOptions: defaultDisplayOptions,
@@ -85,7 +91,7 @@ export default class Voyager extends React.Component<VoyagerProps> {
 
   svgRenderer: SVGRender;
   viewportRef = React.createRef<GraphViewport>();
-  instospectionPromise = null;
+  sourcesPromise = null;
 
   constructor(props) {
     super(props);
@@ -96,27 +102,25 @@ export default class Voyager extends React.Component<VoyagerProps> {
   }
 
   componentDidMount() {
-    this.fetchIntrospection();
+    this.makeSchema();
   }
 
-  fetchIntrospection() {
+  makeSchema() {
     const displayOptions = normalizeDisplayOptions(this.props.displayOptions);
 
-    if (typeof this.props.introspection !== 'function') {
-      this.updateIntrospection(this.props.introspection, displayOptions);
+    if (typeof this.props.sources !== 'function') {
+      this.updateSources(this.props.sources, displayOptions);
       return;
     }
 
-    let promise = this.props.introspection(getIntrospectionQuery());
+    let promise = this.props.sources();
 
     if (!isPromise(promise)) {
-      throw new Error(
-        'SchemaProvider did not return a Promise for introspection.',
-      );
+      throw new Error('SourcesProvider did not return a Promise.');
     }
 
     this.setState({
-      introspectionData: null,
+      sources: null,
       schema: null,
       typeGraph: null,
       displayOptions: null,
@@ -124,18 +128,18 @@ export default class Voyager extends React.Component<VoyagerProps> {
       selectedEdgeID: null,
     });
 
-    this.instospectionPromise = promise;
+    this.sourcesPromise = promise;
     promise.then((introspectionData) => {
-      if (promise === this.instospectionPromise) {
-        this.instospectionPromise = null;
-        this.updateIntrospection(introspectionData, displayOptions);
+      if (promise === this.sourcesPromise) {
+        this.sourcesPromise = null;
+        this.updateSources(introspectionData, displayOptions);
       }
     });
   }
 
-  updateIntrospection(introspectionData, displayOptions) {
+  updateSources(sources: Sources, displayOptions) {
     const schema = getSchema(
-      introspectionData,
+      sources,
       displayOptions.sortByAlphabet,
       displayOptions.skipRelay,
       displayOptions.skipDeprecated,
@@ -147,7 +151,7 @@ export default class Voyager extends React.Component<VoyagerProps> {
     );
 
     this.setState({
-      introspectionData,
+      sources,
       schema,
       typeGraph,
       displayOptions,
@@ -157,11 +161,11 @@ export default class Voyager extends React.Component<VoyagerProps> {
   }
 
   componentDidUpdate(prevProps: VoyagerProps) {
-    if (this.props.introspection !== prevProps.introspection) {
-      this.fetchIntrospection();
+    if (this.props.sources !== prevProps.sources) {
+      this.makeSchema();
     } else if (this.props.displayOptions !== prevProps.displayOptions) {
-      this.updateIntrospection(
-        this.state.introspectionData,
+      this.updateSources(
+        this.state.sources,
         normalizeDisplayOptions(this.props.displayOptions),
       );
     }
@@ -191,7 +195,7 @@ export default class Voyager extends React.Component<VoyagerProps> {
       (child: React.ReactElement<any>) => child.type === Voyager.PanelHeader,
     );
 
-    const { typeGraph, selectedTypeID, selectedEdgeID } = this.state;
+    const { typeGraph, selectedTypeID, selectedEdgeID, displayOptions } = this.state;
     const onFocusNode = (id) => this.viewportRef.current.focusNode(id);
 
     return (
@@ -199,6 +203,7 @@ export default class Voyager extends React.Component<VoyagerProps> {
         <div className="contents">
           {panelHeader}
           <DocExplorer
+            displayOptions={displayOptions}
             typeGraph={typeGraph}
             selectedTypeID={selectedTypeID}
             selectedEdgeID={selectedEdgeID}
@@ -250,7 +255,7 @@ export default class Voyager extends React.Component<VoyagerProps> {
 
   handleDisplayOptionsChange = (delta) => {
     const displayOptions = { ...this.state.displayOptions, ...delta };
-    this.updateIntrospection(this.state.introspectionData, displayOptions);
+    this.updateSources(this.state.sources, displayOptions);
   };
 
   handleSelectNode = (selectedTypeID) => {

@@ -73,6 +73,10 @@
   }
 }
 
+.type-source-link {
+  padding: 0 var(--panel-spacing);
+}
+
 .doc-category {
   margin: var(--panel-spacing) 0 0;
   cursor: pointer;

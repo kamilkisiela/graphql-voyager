@@ -29,12 +29,11 @@ export default function renderVoyagerPage(options: MiddlewareOptions) {
     }
   </style>
   <link rel="stylesheet"
-    href="https://cdn.jsdelivr.net/npm/graphql-voyager@${version}/dist/voyager.css"
+    href="https://cdn.jsdelivr.net/npm/@kamilkisiela/graphql-voyager@${version}/dist/voyager.css"
   />
-  <script src="https://cdn.jsdelivr.net/fetch/2.0.1/fetch.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/react@16/umd/react.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/react-dom@16/umd/react-dom.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/graphql-voyager@${version}/dist/voyager.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react@17/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@17/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@kamilkisiela/graphql-voyager@${version}/dist/voyager.min.js"></script>
 </head>
 <body>
   <main id="voyager">
@@ -42,14 +41,13 @@ export default function renderVoyagerPage(options: MiddlewareOptions) {
   </main>
   <script>
     window.addEventListener('load', function(event) {
-      function introspectionProvider(introspectionQuery) {
+      function sourcesProvider() {
         return fetch('${endpointUrl}', {
           method: 'post',
           headers: Object.assign({}, {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
           }, ${headersJS}),
-          body: JSON.stringify({query: introspectionQuery }),
           credentials: 'include',
         }).then(function (response) {
           return response.text();
@@ -63,7 +61,7 @@ export default function renderVoyagerPage(options: MiddlewareOptions) {
       }
 
       GraphQLVoyager.init(document.getElementById('voyager'), {
-        introspection: introspectionProvider,
+        sources: sourcesProvider,
         displayOptions: ${JSON.stringify(displayOptions)},
       })
     })

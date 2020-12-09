@@ -1,11 +1,12 @@
-import { IntrospectionEnumValue } from 'graphql';
+import { GraphQLArgument, GraphQLField, GraphQLNamedType, IntrospectionEnumValue, TypeKind } from 'graphql';
 
 export type SimplifiedArg = {
   name: string;
   description: string;
   defaultValue: any;
-  typeWrappers: ('NON_NULL' | 'LIST')[];
+  typeWrappers: (typeof TypeKind.LIST | typeof TypeKind.NON_NULL)[];
   id?: string;
+  astNode?: GraphQLArgument['astNode']
 };
 
 export type SimplifiedField<T> = {
@@ -14,7 +15,7 @@ export type SimplifiedField<T> = {
   id?: string;
   relayType: T;
   description: string;
-  typeWrappers: ('NON_NULL' | 'LIST')[];
+  typeWrappers: (typeof TypeKind.LIST | typeof TypeKind.NON_NULL)[];
   isDeprecated: boolean;
   deprecationReason?: string;
   args: {
@@ -23,6 +24,7 @@ export type SimplifiedField<T> = {
   relayArgs: {
     [name: string]: SimplifiedArg;
   };
+  astNode?: GraphQLField<any, any>['astNode']
 };
 
 export type SimplifiedInputField = SimplifiedArg;
@@ -35,8 +37,8 @@ export type SimplifiedTypeBase = {
   inputFields?: {
     [name: string]: SimplifiedInputField;
   };
-
   isRelayType?: boolean;
+  astNode?: GraphQLNamedType['astNode']
 };
 
 export type SimplifiedType = SimplifiedTypeBase & {

@@ -16,7 +16,7 @@ import './components.css';
 export default class Demo extends React.Component {
   state = {
     changeSchemaModalOpen: false,
-    introspection: defaultPreset,
+    sources: defaultPreset,
   };
 
   constructor(props) {
@@ -24,14 +24,13 @@ export default class Demo extends React.Component {
 
     const { url, withCredentials } = getQueryParams();
     if (url) {
-      this.state.introspection = (introspectionQuery) =>
+      this.state.sources = () =>
         fetch(url, {
           method: 'post',
           headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ query: introspectionQuery }),
           ...(withCredentials === 'true'
             ? { credentials: 'include', mode: 'cors' }
             : {}),
@@ -40,7 +39,7 @@ export default class Demo extends React.Component {
   }
 
   public render() {
-    const { changeSchemaModalOpen, introspection } = this.state;
+    const { changeSchemaModalOpen, sources } = this.state;
 
     const openChangeSchema = () =>
       this.setState({ changeSchemaModalOpen: true });
@@ -49,7 +48,7 @@ export default class Demo extends React.Component {
 
     return (
       <MuiThemeProvider theme={theme}>
-        <GraphQLVoyager introspection={introspection}>
+        <GraphQLVoyager sources={sources}>
           <GraphQLVoyager.PanelHeader>
             <div className="voyager-panel">
               <Logo />

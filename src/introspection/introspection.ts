@@ -1,10 +1,27 @@
 import * as _ from 'lodash';
+
 import {
-  buildClientSchema,
-  introspectionFromSchema,
   lexicographicSortSchema,
-  IntrospectionSchema,
-  IntrospectionType,
+  concatAST,
+  TypeKind,
+  Kind,
+  parse,
+  Source,
+  buildASTSchema,
+  GraphQLSchema,
+  GraphQLNamedType,
+  isObjectType,
+  GraphQLField,
+  GraphQLArgument,
+  GraphQLInputType,
+  GraphQLOutputType,
+  isNonNullType,
+  isListType,
+  isInterfaceType,
+  isUnionType,
+  isEnumType,
+  isInputObjectType,
+  isIntrospectionType,
 } from 'graphql';
 import {
   SimplifiedIntrospection,
@@ -12,22 +29,46 @@ import {
   SimplifiedType,
 } from './types';
 import { typeNameToId } from './utils';
+import { Sources } from '../components/Voyager';
 
-function unwrapType(type, wrappers) {
-  while (type.kind === 'NON_NULL' || type.kind == 'LIST') {
-    wrappers.push(type.kind);
+function toTypeKind<K extends keyof typeof Kind>(kind: typeof Kind[K]) {
+  const convertMap = {
+    [Kind.SCALAR_TYPE_DEFINITION]: TypeKind.SCALAR,
+    [Kind.OBJECT_TYPE_DEFINITION]: TypeKind.OBJECT,
+    [Kind.INTERFACE_TYPE_DEFINITION]: TypeKind.INTERFACE,
+    [Kind.UNION_TYPE_DEFINITION]: TypeKind.UNION,
+    [Kind.ENUM_TYPE_DEFINITION]: TypeKind.ENUM,
+    [Kind.INPUT_OBJECT_TYPE_DEFINITION]: TypeKind.INPUT_OBJECT,
+    [Kind.LIST_TYPE]: TypeKind.LIST,
+    [Kind.NON_NULL_TYPE]: TypeKind.NON_NULL,
+  };
+
+  if (kind in convertMap) {
+    return convertMap[kind as any];
+  }
+
+  throw new Error(`Cannot convert ${kind} to TypeKind`);
+}
+
+function unwrapType(
+  type: GraphQLInputType | GraphQLOutputType,
+  wrappers: Array<typeof TypeKind.NON_NULL | typeof TypeKind.LIST>,
+) {
+  while (isNonNullType(type) || isListType(type)) {
+    wrappers.push(isNonNullType(type) ? TypeKind.NON_NULL : TypeKind.LIST);
     type = type.ofType;
   }
 
   return type.name;
 }
 
-function convertArg(inArg) {
-  var outArg = <any>{
+function convertArg(inArg: GraphQLArgument) {
+  const outArg = <any>{
     name: inArg.name,
     description: inArg.description,
     defaultValue: inArg.defaultValue,
     typeWrappers: [],
+    astNode: inArg.astNode
   };
   outArg.type = unwrapType(inArg.type, outArg.typeWrappers);
 
@@ -36,12 +77,13 @@ function convertArg(inArg) {
 
 let convertInputField = convertArg;
 
-function convertField(inField) {
-  var outField = <any>{
+function convertField(inField: GraphQLField<any, any>) {
+  const outField = <any>{
     name: inField.name,
     description: inField.description,
     typeWrappers: [],
     isDeprecated: inField.isDeprecated,
+    astNode: inField.astNode
   };
 
   outField.type = unwrapType(inField.type, outField.typeWrappers);
@@ -54,50 +96,58 @@ function convertField(inField) {
   return outField;
 }
 
-function convertType(inType: IntrospectionType): SimplifiedType {
+function convertType(inType: GraphQLNamedType): SimplifiedType {
+  const typeKind = toTypeKind(
+    ['ID', 'String', 'Int', 'Float', 'Boolean'].includes(inType.name)
+      ? 'ScalarTypeDefinition'
+      : inType.astNode.kind,
+  );
   const outType: SimplifiedType = {
-    kind: inType.kind,
+    kind: typeKind,
     name: inType.name,
     description: inType.description,
+    astNode: inType.astNode,
   };
 
-  switch (inType.kind) {
-    case 'OBJECT':
-      outType.interfaces = _(inType.interfaces).map('name').uniq().value();
-      outType.fields = _(inType.fields).map(convertField).keyBy('name').value();
-      break;
-    case 'INTERFACE':
-      outType.derivedTypes = _(inType.possibleTypes).map('name').uniq().value();
-      outType.fields = _(inType.fields).map(convertField).keyBy('name').value();
-      break;
-    case 'UNION':
-      outType.possibleTypes = _(inType.possibleTypes)
-        .map('name')
-        .uniq()
-        .value();
-      break;
-    case 'ENUM':
-      outType.enumValues = inType.enumValues.slice();
-      break;
-    case 'INPUT_OBJECT':
-      outType.inputFields = _(inType.inputFields)
-        .map(convertInputField)
-        .keyBy('name')
-        .value();
-      break;
+  if (isObjectType(inType)) {
+    outType.interfaces = _(inType.getInterfaces()).map('name').uniq().value();
+    outType.fields = _(Object.values(inType.getFields()))
+      .map(convertField)
+      .keyBy('name')
+      .value();
+  } else if (isInterfaceType(inType)) {
+    outType.derivedTypes = _(inType.getInterfaces()).map('name').uniq().value();
+    outType.fields = _(Object.values(inType.getFields()))
+      .map(convertField)
+      .keyBy('name')
+      .value();
+  } else if (isUnionType(inType)) {
+    outType.possibleTypes = _(inType.getTypes()).map('name').uniq().value();
+  } else if (isEnumType(inType)) {
+    outType.enumValues = inType.getValues().slice();
+  } else if (isInputObjectType(inType)) {
+    outType.inputFields = _(Object.values(inType.getFields()))
+      .map(convertInputField)
+      .keyBy('name')
+      .value();
   }
 
   return outType;
 }
 
-function simplifySchema(
-  inSchema: IntrospectionSchema,
-): SimplifiedIntrospection {
+function simplifySchema(schema: GraphQLSchema): SimplifiedIntrospection {
   return {
-    types: _(inSchema.types).map(convertType).keyBy('name').value(),
-    queryType: inSchema.queryType.name,
-    mutationType: _.get(inSchema, 'mutationType.name', null),
-    subscriptionType: _.get(inSchema, 'subscriptionType.name', null),
+    types: _(
+      Object.values(schema.getTypeMap()).filter(
+        (type) => !isIntrospectionType(type),
+      ),
+    )
+      .map(convertType)
+      .keyBy('name')
+      .value(),
+    queryType: schema.getQueryType().name,
+    mutationType: schema.getMutationType()?.name ?? null,
+    subscriptionType: schema.getSubscriptionType()?.name ?? null,
     //FIXME:
     //directives:
   };
@@ -155,7 +205,7 @@ function markRelayTypes(schema: SimplifiedIntrospectionWithIds): void {
 
   _.each(schema.types, (type) => {
     _.each(type.fields, (field) => {
-      var realType = edgeTypesMap[field.type.name];
+      const realType = edgeTypesMap[field.type.name];
       if (realType === undefined) return;
 
       field.relayType = field.type;
@@ -245,20 +295,22 @@ function assignTypesAndIDs(schema: SimplifiedIntrospection) {
 }
 
 export function getSchema(
-  introspection: any,
+  sources: Sources,
   sortByAlphabet: boolean,
   skipRelay: boolean,
   skipDeprecated: boolean,
 ) {
-  if (!introspection) return null;
+  if (!sources) return null;
 
-  let schema = buildClientSchema(introspection.data);
+  const docs = concatAST(
+    sources.map((source) => parse(new Source(source.content, source.filepath))),
+  );
+  let schema = buildASTSchema(docs);
   if (sortByAlphabet) {
     schema = lexicographicSortSchema(schema);
   }
 
-  introspection = introspectionFromSchema(schema, { descriptions: true });
-  let simpleSchema = simplifySchema(introspection.__schema);
+  let simpleSchema = simplifySchema(schema);
 
   assignTypesAndIDs(simpleSchema);
 
@@ -268,5 +320,8 @@ export function getSchema(
   if (skipDeprecated) {
     markDeprecated((<any>simpleSchema) as SimplifiedIntrospectionWithIds);
   }
+
+  console.log({ simpleSchema });
+
   return simpleSchema;
 }

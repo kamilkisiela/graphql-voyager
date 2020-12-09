@@ -8,15 +8,18 @@ import { SimplifiedTypeWithIDs } from '../../introspection/types';
 import { isMatch, highlightTerm } from '../../utils';
 
 import Markdown from '../utils/Markdown';
+import { SourceLink } from '../utils/SourceLink';
 import Description from './Description';
 import TypeLink from './TypeLink';
 import WrappedTypeName from './WrappedTypeName';
 import Argument from './Argument';
+import { VoyagerDisplayOptions } from '../Voyager';
 
 interface TypeDocProps {
   selectedType: any;
   selectedEdgeID: string;
   typeGraph: any;
+  displayOptions: VoyagerDisplayOptions;
   filter: string;
   onSelectEdge: (string) => void;
   onTypeLink: (any) => void;
@@ -45,6 +48,7 @@ export default class TypeDoc extends React.Component<TypeDocProps> {
       selectedType,
       selectedEdgeID,
       typeGraph,
+      displayOptions,
       filter,
       onSelectEdge,
       onTypeLink,
@@ -53,6 +57,9 @@ export default class TypeDoc extends React.Component<TypeDocProps> {
     return (
       <>
         <Description className="-doc-type" text={selectedType.description} />
+        <div className="type-source-link">
+          <SourceLink node={selectedType} creator={displayOptions.sourceLink} />
+        </div>
         {renderTypesDef(selectedType, selectedEdgeID)}
         {renderFields(selectedType, selectedEdgeID)}
       </>
@@ -107,6 +114,7 @@ export default class TypeDoc extends React.Component<TypeDocProps> {
                   onClick={onTypeLink}
                   filter={filter}
                 />
+                <SourceLink node={type.type} creator={displayOptions.sourceLink} />
                 <Description
                   text={type.type.description}
                   className="-linked-type"
@@ -169,6 +177,7 @@ export default class TypeDoc extends React.Component<TypeDocProps> {
                 {field.isDeprecated && (
                   <span className="doc-alert-text"> DEPRECATED</span>
                 )}
+                <SourceLink node={field} creator={displayOptions.sourceLink} />
                 <Markdown
                   text={field.description}
                   className="description-box -field"

@@ -1,0 +1,5 @@
+@import '../variables.css';
+
+.source-link {
+  color: var(--accent-link-color);
+}
